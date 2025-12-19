@@ -218,6 +218,10 @@ class vLLMRollout(BaseRollout):
         env_clients = [init_env_client(self.agentgym_config) for _ in range(batch_size)]
         time.sleep(self.config.send_interval) # take a break before sendng request
         all_done_flag = False
+
+        ###HICCUP # print(f"rollout_handler_ls length: {len(rollout_handler_ls)}")
+        ###HICCUP # print(f"rollout_handler_ls: {rollout_handler_ls}")
+
         for idx, rollout_handler in enumerate(rollout_handler_ls):
             try:
                 env_clients[idx].reset(rollout_handler.item_id)
@@ -235,6 +239,8 @@ class vLLMRollout(BaseRollout):
         inference_logs = []  # Collect logs for JSON file
         def agent_step(i, idx):
             content = self.tokenizer.decode(response_ids[i], skip_special_tokens=True)
+            print(f"agent_step - content: {content}")
+
             rollout_handler_ls[idx].add_assistant_message(self.tokenizer, content)
             task_rounds[idx] += 1
             try:
@@ -251,6 +257,8 @@ class vLLMRollout(BaseRollout):
                 rollout_handler_ls[idx].done = True
                 print(f"Rollou step Error: {e} item id = {rollout_handler_ls[idx].item_id}")
                 return True
+
+        # max_rounds = 1
         while rounds < max_rounds and not all_done_flag:
             # get generation prompt
             generation_prompt_idxs = []
@@ -263,7 +271,7 @@ class vLLMRollout(BaseRollout):
             rollout_bar.set_description(f"Rounds {rounds + 1}/{max_rounds} | Active agents per gpu: {len(not_done_idxs)}")
             # users can customize different sampling_params at different run
             with self.update_sampling_params(**kwargs):
-                if rank == 0:
+                if False: # rank == 0: ###HICCUP
                     for local_idx, (handler_idx, prompt_token_ids) in enumerate(zip(not_done_idxs, generation_prompt_idxs)):
                         try:
                             prompt_text = self.tokenizer.decode(prompt_token_ids, skip_special_tokens=True)
@@ -289,7 +297,7 @@ class vLLMRollout(BaseRollout):
                     sampling_params=self.sampling_params,
                     use_tqdm=False)
             response_ids = output[0].tolist()
-            if rank == 0:
+            if False: # rank == 0: ###HICCUP
                 for local_idx, (handler_idx, resp_token_ids) in enumerate(zip(not_done_idxs, response_ids)):
                     try:
                         resp_text = self.tokenizer.decode(resp_token_ids, skip_special_tokens=True)

@@ -129,6 +129,8 @@ def main(config):
             output_lst[i].extend(output.batch['task_scores'].sum(dim=-1).tolist())
 
     # convert output_lst from (n_samples, n_data) to (n_data, n_sampels)
+    ###HICCUP # print(f"output_lst: {output_lst}")
+    
     output_np = np.array(output_lst, dtype=object)
     output_np = np.transpose(output_np, axes=(1, 0))
     output_lst = output_np.tolist()
@@ -138,15 +140,20 @@ def main(config):
     print(f"Pass@{config.data.n_samples}: {np.mean(np.max(output_np, axis=-1) > 0)}")
     print("============Sub Task Evaluation============")
     
-    category_success_bucket = defaultdict(list)
-    for item_id, score in zip(item_ids, output_lst):
-        category = category_map[item_id]
-        category_success_bucket[category].append(score)
-    for category_file in category_files:
-        category = category_file.split(".")[0]
-        print(f"Category: {category}")
-        print(f"Avg@{config.data.n_samples}: {np.mean(np.array(category_success_bucket[category]))}")
-        print(f"Pass@{config.data.n_samples}: {np.mean(np.max(np.array(category_success_bucket[category]), axis=-1) > 0)}")
+    if category_map:
+        category_success_bucket = defaultdict(list)
+        for item_id, score in zip(item_ids, output_lst):
+            if item_id in category_map:
+                category = category_map[item_id]
+                category_success_bucket[category].append(score)
+        for category_file in category_files:
+            category = category_file.split(".")[0]
+            if category in category_success_bucket and len(category_success_bucket[category]) > 0:
+                print(f"Category: {category}")
+                print(f"Avg@{config.data.n_samples}: {np.mean(np.array(category_success_bucket[category]))}")
+                print(f"Pass@{config.data.n_samples}: {np.mean(np.max(np.array(category_success_bucket[category]), axis=-1) > 0)}")
+    else:
+        print("No category files found. Skipping sub-task evaluation.")
 
 
 

@@ -77,6 +77,12 @@ class RolloutHandler:
         conversations = [
             msg.to_dict() for msg in self.messages
         ]
+
+        print(f"Hiccup Start-----------------------------------------------")
+        print(f"get_generation_prompt - conversations: {conversations}")
+        print(f"item_id: {self.item_id}")
+        print(f"Hiccup End-----------------------------------------------")
+
         return tokenizer.apply_chat_template(conversations, add_generation_prompt=True, tokenize=True)
     
     
@@ -133,6 +139,10 @@ class RolloutHandler:
         suffix_msg = self.format_config[format]["user_suffix_msg"]
         suffix_token_ids = tokenizer.encode(suffix_msg, add_special_tokens=False)
         content_token_ids = tokenizer.encode(content, add_special_tokens=False)
+
+        print(f"add_user_message")
+        print(f"prefix_msg: {prefix_msg}")
+        print(f"suffix_msg: {suffix_msg}")
 
         if self.input_ids[-len(prefix_token_ids) :] == prefix_token_ids:
             append_token_ids = content_token_ids
