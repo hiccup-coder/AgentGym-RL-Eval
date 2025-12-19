@@ -49,7 +49,8 @@ export CUDA_LAUNCH_BLOCKING=1  # Enable blocking for better error messages
 export TORCH_CUDA_ARCH_LIST="8.0;8.6;8.9;9.0"
 export CUDA_GRAPH_ENABLED=0
 # Try to use CPU fallback for unsupported operations
-export PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:128
+# Use expandable_segments to avoid fragmentation and reduce max_split_size
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,max_split_size_mb:128
 
 # Baby-ai env server URL
 env_server_url="http://0.0.0.0:36001"
@@ -75,15 +76,16 @@ HYDRA_FULL_ERROR=1 ${PYTHON_CMD} -m verl.agent_trainer.main_generation  \
     data.max_prompt_length=512 \
     data.max_response_length=8192 \
     data.n_samples=${sample_num} \
-    data.batch_size=32 \
+    data.batch_size=8 \
     agentgym.task_name=${task_name} \
     agentgym.env_addr=${env_server_url} \
     agentgym.max_rounds=${max_rounds} \
     agentgym.timeout=500 \
     model.path=${model_path} \
-    rollout.gpu_memory_utilization=0.95 \
+    rollout.gpu_memory_utilization=0.5 \
     rollout.temperature=1 \
-    rollout.max_model_len=32768 \
+    rollout.max_model_len=4096 \
+    rollout.max_num_batched_tokens=4096 \
     rollout.max_tokens=512 \
     rollout.tensor_model_parallel_size=1 \
     rollout.rollout_log_dir=executer_logs
