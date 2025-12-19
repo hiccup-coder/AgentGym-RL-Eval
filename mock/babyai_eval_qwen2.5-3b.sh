@@ -70,6 +70,24 @@ else
     echo "Model found at ${model_path}. Using existing model."
 fi
 
+# Create a single-item dataset for quick testing (evaluate only 1 item)
+SINGLE_DATASET="/workspace/dataset/eval/babyai_test_single.json"
+ORIGINAL_DATASET="/workspace/dataset/eval/babyai_test.json"
+BACKUP_DATASET="/workspace/dataset/eval/babyai_test.json.backup"
+
+# Create single-item dataset if it doesn't exist
+if [ ! -f "${SINGLE_DATASET}" ]; then
+    echo "Creating single-item dataset for quick evaluation..."
+    ${PYTHON_CMD} -c "import json; data = json.load(open('${ORIGINAL_DATASET}')); json.dump([data[0]], open('${SINGLE_DATASET}', 'w'), indent=2)"
+fi
+
+# Backup and replace with single-item version
+if [ ! -f "${BACKUP_DATASET}" ]; then
+    cp "${ORIGINAL_DATASET}" "${BACKUP_DATASET}"
+fi
+cp "${SINGLE_DATASET}" "${ORIGINAL_DATASET}"
+echo "Using single-item dataset for evaluation (1 item instead of all items)"
+
 HYDRA_FULL_ERROR=1 ${PYTHON_CMD} -m verl.agent_trainer.main_generation  \
     trainer.n_gpus_per_node=1 \
     data.path=/workspace/dataset/eval \
@@ -90,5 +108,12 @@ HYDRA_FULL_ERROR=1 ${PYTHON_CMD} -m verl.agent_trainer.main_generation  \
     rollout.tensor_model_parallel_size=1 \
     rollout.rollout_log_dir=executer_logs
 status=$?
+
+# Restore original dataset
+if [ -f "${BACKUP_DATASET}" ]; then
+    mv "${BACKUP_DATASET}" "${ORIGINAL_DATASET}"
+    echo "Restored original dataset file"
+fi
+
 exit $status
 
