@@ -209,6 +209,11 @@ class vLLMRollout(BaseRollout):
         # repeat for self.config.n times to rollout
         batch_size = prompts.batch['input_ids'].size(0)
         batch_size *= self.config.n
+
+        print(f"batch_size: {batch_size}")
+        print(f"max_rounds: {max_rounds}")
+        print(f"prompts: {prompts}")
+
         rollout_handler_ls = self.preprocess_prompt_to_rollout_handler(prompts, n=self.config.n)
         env_clients = [init_env_client(self.agentgym_config) for _ in range(batch_size)]
         time.sleep(self.config.send_interval) # take a break before sendng request
@@ -226,6 +231,8 @@ class vLLMRollout(BaseRollout):
         rounds = 0
         task_rounds = [0] * batch_size
         rollout_bar = tqdm(total = max_rounds, desc="Running rounds", disable=torch.distributed.get_rank() != 0)
+        rank = torch.distributed.get_rank() if torch.distributed.is_initialized() else 0
+        inference_logs = []  # Collect logs for JSON file
         def agent_step(i, idx):
             content = self.tokenizer.decode(response_ids[i], skip_special_tokens=True)
             rollout_handler_ls[idx].add_assistant_message(self.tokenizer, content)
@@ -256,12 +263,52 @@ class vLLMRollout(BaseRollout):
             rollout_bar.set_description(f"Rounds {rounds + 1}/{max_rounds} | Active agents per gpu: {len(not_done_idxs)}")
             # users can customize different sampling_params at different run
             with self.update_sampling_params(**kwargs):
+                if rank == 0:
+                    for local_idx, (handler_idx, prompt_token_ids) in enumerate(zip(not_done_idxs, generation_prompt_idxs)):
+                        try:
+                            prompt_text = self.tokenizer.decode(prompt_token_ids, skip_special_tokens=True)
+                        except Exception as e:
+                            prompt_text = f"<decode_error: {e}>"
+                        print(f"📥 [PROMPT] Round {rounds + 1} | HandlerIdx={handler_idx} | LocalIdx={local_idx}")
+                        print(f"{'='*80}")
+                        print(f"{prompt_text}")
+                        print(f"{'='*80}\n")
+                        # Collect for JSON
+                        inference_logs.append({
+                            "round": rounds + 1,
+                            "handler_idx": handler_idx,
+                            "local_idx": local_idx,
+                            "item_id": rollout_handler_ls[handler_idx].item_id,
+                            "type": "prompt",
+                            "text": prompt_text,
+                            "timestamp": time.time()
+                        })
                 output = self.inference_engine.generate(
                     prompts=None,
                     prompt_token_ids=generation_prompt_idxs,
                     sampling_params=self.sampling_params,
                     use_tqdm=False)
             response_ids = output[0].tolist()
+            if rank == 0:
+                for local_idx, (handler_idx, resp_token_ids) in enumerate(zip(not_done_idxs, response_ids)):
+                    try:
+                        resp_text = self.tokenizer.decode(resp_token_ids, skip_special_tokens=True)
+                    except Exception as e:
+                        resp_text = f"<decode_error: {e}>"
+                    print(f"📤 [RESPONSE] Round {rounds + 1} | HandlerIdx={handler_idx} | LocalIdx={local_idx}")
+                    print(f"{'='*80}")
+                    print(f"{resp_text}")
+                    print(f"{'='*80}\n")
+                    # Collect for JSON
+                    inference_logs.append({
+                        "round": rounds + 1,
+                        "handler_idx": handler_idx,
+                        "local_idx": local_idx,
+                        "item_id": rollout_handler_ls[handler_idx].item_id,
+                        "type": "response",
+                        "text": resp_text,
+                        "timestamp": time.time()
+                    })
             all_done_flag = True
             time.sleep(self.config.send_interval) # take a break before sendng request
             if len(not_done_idxs) > 0:
@@ -327,8 +374,10 @@ class vLLMRollout(BaseRollout):
 
         if global_steps:
             try:
-                os.makedirs(os.path.join(self.config.rollout_log_dir, f"step{global_steps}"), exist_ok=True)
-                with open(os.path.join(self.config.rollout_log_dir, f"step{global_steps}/{torch.distributed.get_rank()}.json"), "w") as f:
+                log_dir = os.path.join(self.config.rollout_log_dir, f"step{global_steps}")
+                os.makedirs(log_dir, exist_ok=True)
+                # Save conversation messages
+                with open(os.path.join(log_dir, f"{torch.distributed.get_rank()}.json"), "w") as f:
                     json_msg = []
                     for idx, msgs in enumerate(messages):
                         records = {
@@ -338,6 +387,10 @@ class vLLMRollout(BaseRollout):
                         }
                         json_msg.append(records)
                     json.dump(json_msg, f, ensure_ascii=True, indent=4)
+                # Save inference logs (prompts and responses)
+                if rank == 0 and inference_logs:
+                    with open(os.path.join(log_dir, f"inference_logs_rank{rank}.json"), "w") as f:
+                        json.dump(inference_logs, f, ensure_ascii=True, indent=4)
             except Exception as e:
                 print(e)
 
